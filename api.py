@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -104,4 +105,20 @@ def chat(req: ChatRequest):
     return ChatResponse(
         question=req.question,
         answer=clean_think(answer),
+    )
+
+
+
+
+@app.post("/chat/stream")
+async def chat_stream(req: ChatRequest):
+    async def event_generator():
+        async for chunk in chain.astream(req.question):
+            text = clean_think(chunk)
+            if text:
+                yield text
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
     )
