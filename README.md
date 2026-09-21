@@ -110,6 +110,63 @@ python ingest.py
 ```bash
 python query.py
 ```
+## Docker 部署
+
+### 前置要求
+
+- 已安装 Docker（Windows 用 Docker Desktop，Linux 直接装 Docker Engine）
+
+### 构建镜像
+
+```bash
+docker build -t langchain-rag-agent:v1 .
+```
+
+### 启动容器
+
+```bash
+docker run -d \
+  --name rag-api \
+  -p 8000:8000 \
+  --env-file .env \
+  -v $(pwd)/chroma_db:/app/chroma_db \
+  langchain-rag-agent:v1
+```
+
+参数说明：
+
+| 参数 | 说明 |
+|---|---|
+| `-d` | 后台运行 |
+| `--name rag-api` | 容器名字 |
+| `-p 8000:8000` | 宿主机端口:容器端口 |
+| `--env-file .env` | 把密钥注入容器（不写进镜像） |
+| `-v $(pwd)/chroma_db:/app/chroma_db` | 挂载向量库，容器删了数据还在 |
+
+### 验证
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "RAG 的主要流程是什么？"}'
+```
+
+### 常用命令
+
+```bash
+docker logs rag-api       # 看容器日志
+docker stop rag-api       # 停止容器
+docker start rag-api      # 再次启动
+docker rm rag-api         # 删除容器（向量库数据保留在本地）
+```
+
+### 镜像优化说明
+
+- 基础镜像用 `python:3.12-slim`，比完整版小约 750MB
+- `pip install --no-cache-dir` 不保留下载缓存
+- `.dockerignore` 排除 `venv/`、`chroma_db/`、`.env` 等无关文件
+- Dockerfile 先 COPY `requirements.txt` 再 COPY 代码，改代码时不用重装依赖
+
 
 ## 效果示例
 
