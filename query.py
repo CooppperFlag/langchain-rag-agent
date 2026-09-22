@@ -7,7 +7,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -44,9 +44,7 @@ def main():
         persist_directory=str(CHROMA_DIR),
         embedding_function=embeddings,
     )
-#retriever 是检索器。向量库（Chroma）通过 .as_retriever() 包装成一个“能根据问题返回相关文档”的对象。你给它一个问题，它返回一批相关的 chunk。
-#{"k"：5}每次检索，返回最相似的 5 个 chunk
-#kwargs keyword arguements 关键字参数
+
     retriever = vectordb.as_retriever(search_kwargs={"k": 5})
 
     llm = ChatOpenAI(
@@ -55,7 +53,7 @@ def main():
         base_url=DEEPSEEK_BASE_URL,
         temperature=0,
     )
-#deepseek是llm 硅基流动的BGM-M3是Embedding embedding把文本转成向量（数字）用于检索 llm读上下文、生成回答，用于生成
+
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
@@ -67,18 +65,49 @@ def main():
         ),
         ("human", "{question}"),
     ])
-#question:用户输入的问题 context 从知识库检索出来的chunk
+
+    # ============ Query Rewriting ============
+    rewrite_prompt = ChatPromptTemplate.from_messages([
+        (
+            "system",
+            "你是一个查询改写助手。"
+            "用户的问题可能口语化、简短、含有指代词。"
+            "请把用户问题改写成更适合在知识库中检索的查询语句。"
+            "要求：\n"
+            "1. 保留核心关键词\n"
+            "2. 补充同义词或相关术语\n"
+            "3. 去掉口语化语气词、指代词\n"
+            "4. 只输出改写后的查询语句，不要任何解释、不要引号\n\n"
+            "示例：\n"
+            "输入：那个写大模型应用的框架是啥来着\n"
+            "输出：LangChain 大模型应用 开发框架 Python\n\n"
+            "输入：怎么防止模型乱说\n"
+            "输出：大模型 幻觉 防止 编造 方法",
+        ),
+        ("human", "{question}"),
+    ])
+
+    rewrite_chain = rewrite_prompt | llm | StrOutputParser()
+
+    def retrieve_with_rewrite(question: str) -> str:
+        """先用 LLM 改写问题，再用改写后的问题去检索。"""
+        rewritten = rewrite_chain.invoke({"question": question})
+        rewritten = rewritten.strip()
+        print(f"\n[改写前] {question}")
+        print(f"[改写后] {rewritten}")
+        docs = retriever.invoke(rewritten)
+        return format_docs(docs)
 
     chain = (
         {
-            "context": retriever | format_docs,
+            "context": RunnableLambda(retrieve_with_rewrite),
             "question": RunnablePassthrough(),
         }
         | prompt
         | llm
         | StrOutputParser()
     )
-# | 管道符 把数据从上一步喂到下一步的传送带
+
     print("RAG Agent 已就绪，输入 q 退出。")
     while True:
         question = input("\n你问：").strip()
@@ -87,9 +116,15 @@ def main():
         if not question:
             continue
 
-        answer = chain.invoke(question)
-        print("\n回答：")
-        print(clean_think(answer))
+                # 清洗掉代理字符，防止 UnicodeEncodeError
+        safe_question = question.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
+
+        try:
+            answer = chain.invoke(safe_question)
+            print("\n回答：")
+            print(clean_think(answer))
+        except Exception as e:
+            print(f"\n[错误] {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":
