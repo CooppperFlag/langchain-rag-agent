@@ -167,6 +167,37 @@ docker rm rag-api         # 删除容器（向量库数据保留在本地）
 - `.dockerignore` 排除 `venv/`、`chroma_db/`、`.env` 等无关文件
 - Dockerfile 先 COPY `requirements.txt` 再 COPY 代码，改代码时不用重装依赖
 
+### 使用 Docker Compose（推荐）
+
+一条命令启动，无需记忆 `docker run` 参数。
+
+```bash
+docker compose up -d
+```
+
+停止并清理：
+
+```bash
+docker compose down
+```
+
+查看状态和日志：
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+`docker-compose.yml` 配置说明：
+
+| 字段 | 作用 |
+|---|---|
+| `build: .` | 从当前目录的 Dockerfile 构建镜像 |
+| `image` | 构建产物的镜像名 |
+| `ports` | 端口映射（宿主机:容器） |
+| `env_file` | 从 `.env` 注入环境变量 |
+| `volumes` | 挂载向量库，容器删除后数据保留 |
+| `restart` | 重启策略，`unless-stopped` 让服务自动恢复 |
 
 ## 效果示例
 
