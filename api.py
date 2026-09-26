@@ -1,5 +1,6 @@
 import os
 import re
+import requests
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -26,6 +27,9 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
 
+SILICONFLOW_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+SILICONFLOW_RERANK_URL = "https://api.siliconflow.cn/v1/rerank"
+
 
 def clean_think(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
@@ -34,6 +38,46 @@ def clean_think(text: str) -> str:
 
 def format_docs(docs):
     return "\n\n---\n\n".join(doc.page_content for doc in docs)
+
+
+def rerank_documents(query: str, docs, top_n: int = 5):
+    """调用硅基流动 Rerank API 对文档重排序，返回 top_n 个。"""
+    if not docs:
+        return docs
+
+    documents = [doc.page_content for doc in docs]
+
+    payload = {
+        "model": SILICONFLOW_RERANK_MODEL,
+        "query": query,
+        "documents": documents,
+        "top_n": top_n,
+        "return_documents": False,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {SILICONFLOW_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    resp = requests.post(
+        SILICONFLOW_RERANK_URL,
+        json=payload,
+        headers=headers,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    results = resp.json()["results"]
+
+    results = sorted(results, key=lambda x: x["relevance_score"], reverse=True)
+
+    reranked = [docs[r["index"]] for r in results[:top_n]]
+
+    print(f"[Rerank] 输入 {len(docs)} 个候选，返回 {len(reranked)} 个")
+    for i, r in enumerate(results[:top_n]):
+        print(f"  Top{i+1}: score={r['relevance_score']:.4f} | {documents[r['index']][:60]}...")
+
+    return reranked
 
 
 # ===== 服务启动时执行一次 =====
@@ -49,7 +93,7 @@ vectordb = Chroma(
     embedding_function=embeddings,
 )
 
-retriever = vectordb.as_retriever(search_kwargs={"k": 5})
+retriever = vectordb.as_retriever(search_kwargs={"k": 20})
 
 llm = ChatOpenAI(
     model=LLM_MODEL,
@@ -95,12 +139,14 @@ rewrite_chain = rewrite_prompt | llm | StrOutputParser()
 
 
 def retrieve_with_rewrite(question: str) -> str:
-    """先用 LLM 改写问题，再用改写后的问题去检索。"""
+    """先用 LLM 改写问题，再用改写后的问题去检索 + Rerank 精排。"""
     rewritten = rewrite_chain.invoke({"question": question})
     rewritten = rewritten.strip()
     print(f"\n[改写前] {question}")
     print(f"[改写后] {rewritten}")
     docs = retriever.invoke(rewritten)
+    print(f"[检索] 初筛得到 {len(docs)} 个候选")
+    docs = rerank_documents(rewritten, docs, top_n=5)
     return format_docs(docs)
 
 
@@ -140,8 +186,6 @@ def chat(req: ChatRequest):
         question=req.question,
         answer=clean_think(answer),
     )
-
-
 
 
 @app.post("/chat/stream")
