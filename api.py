@@ -11,7 +11,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -70,9 +70,43 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}"),
 ])
 
+# ============ Query Rewriting ============
+rewrite_prompt = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        "你是一个查询改写助手。"
+        "用户的问题可能口语化、简短、含有指代词。"
+        "请把用户问题改写成更适合在知识库中检索的查询语句。"
+        "要求：\n"
+        "1. 保留核心关键词\n"
+        "2. 补充同义词或相关术语\n"
+        "3. 去掉口语化语气词、指代词\n"
+        "4. 只输出改写后的查询语句，不要任何解释、不要引号\n\n"
+        "示例：\n"
+        "输入：那个写大模型应用的框架是啥来着\n"
+        "输出：LangChain 大模型应用 开发框架 Python\n\n"
+        "输入：怎么防止模型乱说\n"
+        "输出：大模型 幻觉 防止 编造 方法",
+    ),
+    ("human", "{question}"),
+])
+
+rewrite_chain = rewrite_prompt | llm | StrOutputParser()
+
+
+def retrieve_with_rewrite(question: str) -> str:
+    """先用 LLM 改写问题，再用改写后的问题去检索。"""
+    rewritten = rewrite_chain.invoke({"question": question})
+    rewritten = rewritten.strip()
+    print(f"\n[改写前] {question}")
+    print(f"[改写后] {rewritten}")
+    docs = retriever.invoke(rewritten)
+    return format_docs(docs)
+
+
 chain = (
     {
-        "context": retriever | format_docs,
+        "context": RunnableLambda(retrieve_with_rewrite),
         "question": RunnablePassthrough(),
     }
     | prompt
