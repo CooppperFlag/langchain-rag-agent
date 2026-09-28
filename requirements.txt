@@ -113,3 +113,4 @@ yarl==1.24.5
 zstandard==0.25.0
 rank_bm25
 jieba
+langchain-chroma

@@ -55,13 +55,17 @@
 
 ```
 langchain-rag-agent/
-├── ingest.py           # 建库：加载 → 切分 → 向量化 → 存入 Chroma
-├── query.py            # 查询：检索 → 组装 Prompt → 调用 LLM → 输出
-├── requirements.txt    # 依赖
-├── .env.example        # 环境变量示例
+├── ingest.py             # 建库：加载 → 切分 → 向量化 → 存入 Chroma
+├── query.py              # 命令行问答：改写 → Hybrid → Rerank → LLM
+├── api.py                # FastAPI 服务：/health、/chat、/chat/stream
+├── hybrid.py             # Hybrid Search：向量 + BM25 + RRF 融合
+├── Dockerfile            # 镜像定义
+├── docker-compose.yml    # 一键启动
+├── requirements.txt      # 依赖
+├── .env.example          # 环境变量示例
 ├── .gitignore
-├── docs/               # 待处理的文档
-└── chroma_db/          # 向量库（本地生成，不上传）
+├── docs/                 # 待处理的文档（PDF/MD/TXT）
+└── chroma_db/            # 向量库（本地生成，不上传）
 ```
 
 ## 快速开始
@@ -202,22 +206,30 @@ docker compose logs -f
 ## 效果示例
 
 ```
-你问：RAG 的主要流程是什么？
+你问：RAG 是什么
+
+[改写前] RAG 是什么
+[改写后] RAG 检索增强生成 定义 原理 大模型
+[检索] 初筛得到 5 个候选
+[Rerank] 输入 5 个候选，返回 5 个
+  Top1: score=0.9856 | # RAG 与 LangChain 简介
+  Top2: score=0.0237 | ## LangChain 是什么
+  ...
 
 回答：
-RAG 的主要流程包括以下 6 步：
-1. 文档加载
-2. 文本切分
-3. 向量化
-4. 存入向量库
-5. 检索
-6. 生成
+RAG 全称 Retrieval-Augmented Generation，中文叫检索增强生成。它的核心思想是：
+在让大模型回答问题之前，先从知识库中检索出相关文档，把文档作为上下文一起送给大模型，
+让大模型基于这些真实材料回答。RAG 能有效减少大模型的幻觉问题。
+```
 
+```
 你问：今天北京天气怎么样？
 
 回答：
 资料里没有提到。
 ```
+
+（防幻觉约束生效：不在知识库范围内的问题直接拒答，不编造。）
 
 ## 核心设计
 
