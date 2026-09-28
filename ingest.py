@@ -13,11 +13,18 @@ load_dotenv(BASE_DIR / ".env")
 DOCS_DIR = BASE_DIR / "docs"
 CHROMA_DIR = BASE_DIR / "chroma_db"
 
+# ====== 切分参数（ingest 和 hybrid 共用，禁止在两处各写一份）======
+CHUNK_SIZE = 200
+CHUNK_OVERLAP = 100
+CHUNK_SEPARATORS = ["\n\n", "\n", "。", "!", "?", "；", ",", ".", " ", ""]
+
 # 从 .env 里读硅基流动的 Key，用来调 Embedding
 SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
 
 # 硅基流动的 OpenAI 兼容接口地址，末尾必须有 /v1
-SILICONFLOW_BASE_URL = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+SILICONFLOW_BASE_URL = os.getenv(
+    "SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"
+)
 
 # 中文向量模型，1024 维，用来把文本转成向量
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
@@ -34,7 +41,7 @@ def load_documents():
 
     docs = []
     for f in files:
-        print(f"加载: {f.name}")
+        print(f"加载：{f.name}")
         if f.suffix.lower() == ".pdf":
             loader = PyPDFLoader(str(f))
         else:
@@ -47,9 +54,9 @@ def load_documents():
 
 def split_docs(docs):
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=200,
-        chunk_overlap=100,
-        separators=["\n\n", "\n", "。", "！", "？", "；", "，", " ", ""],
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        separators=CHUNK_SEPARATORS,
     )
     chunks = splitter.split_documents(docs)
     print(f"切分成 {len(chunks)} 个 chunk")
@@ -77,7 +84,7 @@ def main():
         persist_directory=str(CHROMA_DIR),
     )
 
-    print(f"完成，向量库位置: {CHROMA_DIR}")
+    print(f"完成，向量库位置：{CHROMA_DIR}")
 
 
 if __name__ == "__main__":

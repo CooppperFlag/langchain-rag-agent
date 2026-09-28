@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 5. 再 COPY 会变的代码
-COPY api.py ingest.py query.py ./
+COPY api.py ingest.py query.py hybrid.py ./
 
 # 6. 拷贝文档目录
 COPY docs/ ./docs/

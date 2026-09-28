@@ -9,6 +9,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from hybrid import build_hybrid_retriever
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -89,7 +90,8 @@ def main():
         embedding_function=embeddings,
     )
 
-    retriever = vectordb.as_retriever(search_kwargs={"k": 20})
+    vector_retriever = vectordb.as_retriever(search_kwargs={"k": 20})
+    retriever = build_hybrid_retriever(vector_retriever, BASE_DIR / "docs", k=20)
 
     llm = ChatOpenAI(
         model=LLM_MODEL,
