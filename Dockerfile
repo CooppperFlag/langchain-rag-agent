@@ -16,7 +16,7 @@ COPY api.py ingest.py query.py hybrid.py ./
 
 # 6. 拷贝文档目录
 COPY docs/ ./docs/
-
+COPY static/ ./static/
 # 7. 声明容器监听 8000 端口（只是个注释性说明，不实际开端口）
 EXPOSE 8000
 
