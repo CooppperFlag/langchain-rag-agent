@@ -5,6 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -202,3 +203,6 @@ async def chat_stream(req: ChatRequest):
         event_generator(),
         media_type="text/event-stream",
     )
+
+# ====== 挂载前端静态页面（放最后，避免拦截 API 路由）======
+app.mount("/", StaticFiles(directory=str(BASE_DIR / "static"), html=True), name="static")

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LangChain RAG Agent</title>
+  <style>
+    /* ===== 基础重置 ===== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                   "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+      background-color: #f3f4f6;
+      color: #1f2937;
+      /* 整体纵向布局：头部 / 对话区 / 底部输入区 */
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ===== 顶部标题栏 ===== */
+    .header {
+      flex-shrink: 0;
+      padding: 16px 24px;
+      background-color: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .header p {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
+    /* ===== 中间对话区 ===== */
+    .chat {
+      flex: 1;                    /* 占满剩余高度 */
+      overflow-y: auto;           /* 内容超出时出现滚动条 */
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;                  /* 每条消息之间的间距 */
+    }
+
+    /* 单条消息的气泡样式：圆角 + 轻阴影 */
+    .msg {
+      max-width: 72%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 15px;
+      line-height: 1.65;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+      word-break: break-word;
+      white-space: pre-wrap;      /* 保留 AI 回复中的换行 */
+      animation: pop-in 0.18s ease-out;
+    }
+
+    @keyframes pop-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 用户消息：靠右 + 灰底 */
+    .msg.user {
+      align-self: flex-end;
+      background-color: #e5e7eb;
+      color: #111827;
+      border-bottom-right-radius: 4px;   /* 靠近边缘的角收窄，更自然 */
+    }
+
+    /* AI 消息：靠左 + 白底 */
+    .msg.ai {
+      align-self: flex-start;
+      background-color: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-bottom-left-radius: 4px;
+    }
+
+    /* 流式输出时的闪烁光标，营造打字机感 */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 16px;
+      margin-left: 3px;
+      vertical-align: -2px;
+      background-color: #4f46e5;
+      border-radius: 2px;
+      animation: blink 0.8s steps(1) infinite;
+    }
+
+    @keyframes blink {
+      0%, 49%   { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    /* 出错的文字标红 */
+    .msg .error-text {
+      color: #dc2626;
+    }
+
+    /* ===== 底部输入区 ===== */
+    .footer {
+      flex-shrink: 0;
+      padding: 14px 16px 20px;
+      background-color: #ffffff;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    /* 输入框：默认一行，输入多行时自动长高 */
+    .input-row textarea {
+      flex: 1;
+      resize: none;
+      border: 1px solid #d1d5db;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 15px;
+      font-family: inherit;
+      line-height: 1.5;
+      max-height: 140px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .input-row textarea:focus {
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+    }
+
+    /* 发送按钮 */
+    .input-row button {
+      flex-shrink: 0;
+      padding: 12px 22px;
+      border: none;
+      border-radius: 12px;
+      background-color: #4f46e5;
+      color: #ffffff;
+      font-size: 15px;
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+
+    .input-row button:hover:not(:disabled) {
+      background-color: #4338ca;
+    }
+
+    /* 等待 AI 回复时按钮置灰禁用 */
+    .input-row button:disabled {
+      background-color: #c7c7cc;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部标题 -->
+  <header class="header">
+    <h1>LangChain RAG Agent</h1>
+    <p>基于检索增强生成的智能问答助手</p>
+  </header>
+
+  <!-- 中间对话区：所有消息条都动态插入到这里 -->
+  <main class="chat" id="chatBox"></main>
+
+  <!-- 底部输入区 -->
+  <footer class="footer">
+    <div class="input-row">
+      <textarea id="inputBox" rows="1" placeholder="输入问题，Enter 发送，Shift + Enter 换行"></textarea>
+      <button id="sendBtn" type="button">发送</button>
+    </div>
+  </footer>
+
+  <script>
+    /* ===================== 元素引用 ===================== */
+    var chatBox = document.getElementById('chatBox');
+    var inputBox = document.getElementById('inputBox');
+    var sendBtn = document.getElementById('sendBtn');
+
+    // 后端接口地址（FastAPI 服务）
+    var API_URL = 'http://localhost:8000/chat/stream';
+
+    // 标记当前是否正在等待 AI 流式回复，用于锁定输入框
+    var isWaiting = false;
+
+    /* ===================== 工具函数 ===================== */
+
+    // 让对话区始终滚动到最底部，能看到最新内容
+    function scrollToBottom() {
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // 输入框根据内容自动增高（1 行到多行）
+    function autoResize() {
+      inputBox.style.height = 'auto';
+      inputBox.style.height = inputBox.scrollHeight + 'px';
+    }
+
+    // 把一条消息追加到对话区
+    // role: 'user' 或 'ai'，返回创建好的气泡 DOM 元素
+    function addMessage(text, role) {
+      var bubble = document.createElement('div');
+      bubble.className = 'msg ' + role;
+      bubble.textContent = text;
+      chatBox.appendChild(bubble);
+      scrollToBottom();
+      return bubble;
+    }
+
+    /* ===================== 发送入口 ===================== */
+    function sendMessage() {
+      var question = inputBox.value.trim();
+      // 空输入或正在等待回复时，直接忽略
+      if (!question || isWaiting) {
+        return;
+      }
+
+      // 1. 把用户消息显示到对话区，并清空输入框
+      addMessage(question, 'user');
+      inputBox.value = '';
+      autoResize();
+
+      // 2. 锁定输入框和发送按钮，防止流式回复期间重复发送
+      isWaiting = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = '等待中';
+
+      // 3. 先创建一个空的 AI 气泡，里面放：
+      //    - span：真正用来拼接流式文本的容器
+      //    - 光标元素：流式输出时闪烁，结束后移除
+      var aiBubble = addMessage('', 'ai');
+      var contentSpan = document.createElement('span');
+      var cursor = document.createElement('span');
+      cursor.className = 'cursor';
+      aiBubble.appendChild(contentSpan);
+      aiBubble.appendChild(cursor);
+
+      // 4. 发起流式请求，把内容实时写进 contentSpan
+      streamChat(question, contentSpan, aiBubble, cursor);
+    }
+
+    /* ===================== 核心：fetch + getReader 流式读取 ===================== */
+    async function streamChat(question, contentSpan, aiBubble, cursor) {
+      try {
+        // ---- 第 1 步：用 fetch 发起 POST 请求 ----
+        // 请求体是 JSON：{"question": "用户输入"}
+        var response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ question: question })
+        });
+
+        // HTTP 状态码非 2xx 时抛错（例如后端 500）
+        if (!response.ok) {
+          throw new Error('请求失败，HTTP 状态码：' + response.status);
+        }
+
+        // ---- 第 2 步：拿到响应体的可读流 reader ----
+        // response.body 是一个 ReadableStream，getReader() 返回读取器
+        var reader = response.body.getReader();
+
+        // ---- 第 3 步：创建文本解码器 ----
+        // 网络层传过来的 chunk 是 Uint8Array（字节），
+        // TextDecoder 负责把字节按 UTF-8 解码成字符串。
+        // { stream: true } 表示这是流式解码：
+        // 如果一个汉字被拆在两个 chunk 里，解码器会缓存半个字符，
+        // 等下一个 chunk 到了再拼完整，避免乱码。
+        var decoder = new TextDecoder('utf-8');
+
+        // ---- 第 4 步：循环读取，直到流结束 ----
+        // 每调用一次 reader.read() 就返回一个 chunk：
+        //   { done: false, value: Uint8Array }  —— 还有数据
+        //   { done: true,  value: undefined }   —— 流已结束
+        while (true) {
+          var chunk = await reader.read();
+          if (chunk.done) {
+            break; // 流结束，退出循环
+          }
+
+          // 把这一块字节解码成文本，实时追加到 AI 气泡里
+          var text = decoder.decode(chunk.value, { stream: true });
+          contentSpan.textContent += text;
+
+          // 有新内容就滚动到底部，保持跟随效果
+          scrollToBottom();
+        }
+
+        // ---- 第 5 步：收尾 ----
+        // 流结束后再调用一次不带参数的 decode()，
+        // 把解码器内部可能残留的字节冲刷出来。
+        contentSpan.textContent += decoder.decode();
+
+        // 如果 AI 一个字符都没返回，给个提示，避免空气泡
+        if (!contentSpan.textContent) {
+          contentSpan.textContent = '（没有收到回复内容）';
+        }
+
+      } catch (error) {
+        // ---- 异常处理：网络错误、后端报错等 ----
+        // 在 AI 气泡里显示错误信息，方便定位问题
+        var errorLine = document.createElement('div');
+        errorLine.className = 'error-text';
+        errorLine.textContent = '出错了：' + error.message;
+        aiBubble.appendChild(errorLine);
+        scrollToBottom();
+
+      } finally {
+        // ---- 第 6 步：无论成功还是失败，都要解锁界面 ----
+        // 移除闪烁光标
+        cursor.remove();
+        // 恢复输入框和发送按钮
+        isWaiting = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = '发送';
+        inputBox.focus();
+        scrollToBottom();
+      }
+    }
+
+    /* ===================== 事件绑定 ===================== */
+
+    // 点击“发送”按钮
+    sendBtn.addEventListener('click', sendMessage);
+
+    // 键盘事件：Enter 发送，Shift + Enter 换行
+    inputBox.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault(); // 阻止默认换行
+        sendMessage();
+      }
+    });
+
+    // 输入时自动调整输入框高度
+    inputBox.addEventListener('input', autoResize);
+
+    // 页面加载完成后自动聚焦输入框
+    inputBox.focus();
+  </script>
+</body>
+</html>
